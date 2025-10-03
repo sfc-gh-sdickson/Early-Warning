@@ -1,3 +1,5 @@
+<img src="Snowflake_Logo.svg" width="200">
+
 # Early Warning Intelligence Agent - Complex Questions
 
 These 10 complex questions demonstrate the intelligence agent's ability to analyze Early Warning's network data, fraud patterns, payment flows, and risk metrics across multiple dimensions.
