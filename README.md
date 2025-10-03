@@ -1,3 +1,5 @@
+<img src="Snowflake_Logo.svg" width="200">
+
 # Early Warning Intelligence Demo
 
 ## About Early Warning
