@@ -1,0 +1,648 @@
+---
+alwaysApply: true
+---
+# AI Coding Rules for Snowflake SQL Projects (Enhanced)
+
+## 🚨 CRITICAL: NO GUESSING POLICY
+
+**If you are tempted to guess, STOP and verify against documentation instead.**
+
+This rule is repeated throughout this document because it is the #1 cause of errors.
+
+---
+
+## ✅ ALWAYS DO THESE THINGS
+
+### 1. **ALWAYS Read Documentation Word-for-Word**
+
+When implementing ANY Snowflake feature:
+
+1. **Open the official Snowflake documentation**
+   - Don't rely on memory or patterns
+   - Don't skim - READ every word of the syntax section
+
+2. **Copy the exact syntax format**
+   - Write it down
+   - Verify parameter order
+   - Check for required vs optional clauses
+
+3. **Test with ONE example**
+   - Verify one instance works correctly
+   - Only then apply the pattern to others
+
+4. **Common trap: Pattern matching**
+   - ❌ BAD: "This looks similar to X, so it must work the same way"
+   - ✅ GOOD: "Let me verify the exact syntax for this specific command"
+
+#### Example: Semantic View Expressions
+
+**Documentation says:** `table_alias.semantic_name AS sql_expression`
+
+This means:
+- **LEFT side**: Semantic name (how you reference it)
+- **RIGHT side**: Actual column or SQL expression
+
+```sql
+-- ❌ WRONG (backwards - caused real errors in Early Warning project)
+customers.city AS customer_city
+fraud_alerts.alert_type AS fraud_alert_type
+
+-- ✅ CORRECT (semantic name on LEFT, actual column on RIGHT)
+customers.customer_city AS city
+fraud_alerts.fraud_alert_type AS alert_type
+```
+
+**Lesson:** When semantic name matches column name, both work. When they differ, order matters. READ THE DOCS.
+
+---
+
+### 2. **ALWAYS Verify ALTER Command Capabilities**
+
+Before using ALTER on any object, verify what it can actually do.
+
+#### Example: ALTER SEMANTIC VIEW
+
+**Documentation:** https://docs.snowflake.com/en/sql-reference/sql/alter-semantic-view
+
+ALTER SEMANTIC VIEW can ONLY:
+1. RENAME TO - Rename the view
+2. SET COMMENT - Modify comment
+3. UNSET COMMENT - Remove comment
+
+**That's it. Nothing else.**
+
+```sql
+-- ❌ WRONG - ADD METRICS does not exist (caused real error in Early Warning project)
+ALTER SEMANTIC VIEW SV_NAME
+  ADD METRICS (
+    table.metric AS expression
+  );
+
+-- ✅ CORRECT - Use CREATE OR REPLACE to modify anything else
+CREATE OR REPLACE SEMANTIC VIEW SV_NAME
+  TABLES (...)
+  RELATIONSHIPS (...)
+  DIMENSIONS (...)
+  METRICS (
+    -- All existing metrics
+    -- Plus new metric
+    table.new_metric AS expression
+  )
+  COMMENT = 'Description';
+```
+
+**Lesson:** Don't assume ALTER works the same across different object types. Verify each one.
+
+---
+
+### 3. **ALWAYS Check for SQL Reserved Words**
+
+Reserved words like STATE, STATUS, COMMENT, etc. may need quoting in certain contexts.
+
+```sql
+-- ❌ May cause errors in semantic views
+customers.state AS customer_state
+
+-- ✅ Quote reserved words
+customers."STATE" AS state
+customers.customer_state AS "STATE"  -- or use in reverse (semantic name is safe)
+```
+
+**How to check:**
+1. If you get "invalid identifier" errors
+2. Check if the word is a SQL reserved word
+3. Try quoting it with double quotes
+
+---
+
+### 4. **ALWAYS Verify Snowflake-Specific Syntax**
+
+#### Array Indexing
+- Snowflake arrays are **0-indexed**, not 1-indexed
+- ❌ Wrong: `ARRAY_CONSTRUCT('a','b','c')[UNIFORM(1, 3, RANDOM())]`
+- ✅ Correct: `ARRAY_CONSTRUCT('a','b','c')[UNIFORM(0, 2, RANDOM())]`
+
+#### Function Arguments
+- `UNIFORM()` requires **constant** arguments for min and max
+- `GENERATOR(ROWCOUNT => n)` requires a **constant** for ROWCOUNT
+- ❌ Wrong: `UNIFORM(1, DATEDIFF('day', date1, date2), RANDOM())`
+- ✅ Correct: `FLOOR(1 + RANDOM() * (DATEDIFF('day', date1, date2) - 1))`
+
+#### Numeric Handling
+- `RANDOM()` returns a **large integer**, not a float between 0 and 1
+- Always use `ABS(RANDOM()) % range` for modulo operations
+- **CRITICAL:** Do NOT cast to target type before arithmetic operations
+- ❌ Wrong: `(ABS(RANDOM()) % 10000)::NUMBER(5,2) / 100` (causes overflow)
+- ✅ Correct: `(ABS(RANDOM()) % 10000) / 100.0` (arithmetic first, implicit cast to column type)
+
+#### Column Alias References
+- Cannot reference column alias in same SELECT where it's defined
+- ❌ Wrong: `SELECT col1 AS x, x + 1 AS y`
+- ✅ Correct: Use subquery or CTE to define aliases first, or repeat the expression
+
+#### Correlated Subqueries
+- Snowflake does not support correlated subqueries in SELECT list or certain JOIN contexts
+- ✅ Use LEFT JOIN with QUALIFY instead
+
+---
+
+### 5. **ALWAYS Check NOT NULL Constraints and JOIN Logic**
+
+When using LEFT JOIN to populate columns, verify the column isn't NOT NULL.
+
+```sql
+-- ❌ WRONG (caused real errors in Early Warning project)
+INSERT INTO ACCOUNTS
+SELECT
+    customer_id,
+    c.institution_id,  -- NULL from LEFT JOIN if customer not found
+    ...
+FROM TABLE(GENERATOR(ROWCOUNT => 150000))
+LEFT JOIN CUSTOMERS c ON c.customer_id = <generated_value>;
+
+-- ✅ CORRECT - Generate the value directly for NOT NULL columns
+INSERT INTO ACCOUNTS
+SELECT
+    customer_id,
+    'FI' || LPAD((ABS(RANDOM()) % 50) + 1, 5, '0') AS institution_id,  -- Direct generation
+    ...
+FROM TABLE(GENERATOR(ROWCOUNT => 150000));
+```
+
+**Validation Process:**
+1. For each INSERT statement, list all NOT NULL columns
+2. For each NOT NULL column, verify it's not populated from a LEFT JOIN
+3. If it is, generate the value directly instead
+
+---
+
+### 6. **ALWAYS Validate Data Loading Order**
+- Include `TRUNCATE TABLE IF EXISTS` statements to prevent duplicate data
+- Order truncates in **reverse dependency order** (child tables first)
+- Order inserts in **forward dependency order** (parent tables first)
+- Verify foreign key dependencies match data generation order
+
+---
+
+### 7. **ALWAYS Verify CREATE SEMANTIC VIEW Syntax**
+
+Per https://docs.snowflake.com/en/sql-reference/sql/create-semantic-view:
+
+#### Clause Order is Mandatory
+```sql
+CREATE SEMANTIC VIEW name
+  TABLES (...)           -- Required
+  RELATIONSHIPS (...)    -- Optional
+  FACTS (...)           -- Optional, must come before DIMENSIONS
+  DIMENSIONS (...)      -- Optional
+  METRICS (...)         -- Optional
+  COMMENT = '...'       -- Optional, MUST BE LAST
+```
+
+#### Semantic Expression Format - CRITICAL
+**Format:** `table_alias.semantic_name AS sql_expression`
+
+- **Semantic name** (LEFT): How you reference it in queries
+- **SQL expression** (RIGHT): The actual column name or calculation
+
+```sql
+-- DIMENSIONS examples
+-- ✅ CORRECT
+customers.customer_city AS city                    -- semantic name: customer_city, column: city
+accounts.account_risk_level AS risk_level         -- semantic name: account_risk_level, column: risk_level
+fraud_alerts.fraud_alert_type AS alert_type       -- semantic name: fraud_alert_type, column: alert_type
+
+-- ❌ WRONG (backwards)
+customers.city AS customer_city                    -- Will fail: looks for column "customer_city"
+accounts.risk_level AS account_risk_level         -- Will fail: looks for column "account_risk_level"
+
+-- METRICS examples
+-- ✅ CORRECT (semantic name on LEFT, SQL expression on RIGHT)
+customers.total_customers AS COUNT(DISTINCT customer_id)
+accounts.avg_balance AS AVG(current_balance)
+fraud_alerts.fraud_prevention_rate AS 
+  (SUM(CASE WHEN status = 'RESOLVED' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100)
+```
+
+**Validation:** For EVERY dimension/metric, verify the RIGHT side column exists in the table definition.
+
+#### Relationship Restrictions
+- **No self-referencing relationships** (table referencing itself)
+- **No cyclic relationships** (A → B → A)
+- ❌ Wrong: `employees(manager_id) REFERENCES employees(employee_id)`
+- ✅ Must break cycles by removing one relationship
+
+#### At Least One Dimension or Metric Required
+```sql
+-- ❌ WRONG (caused error in AGENT_SETUP.md example)
+CREATE SEMANTIC VIEW SV_NAME
+  TABLES (...)
+  RELATIONSHIPS (...)
+  -- Add dimensions and metrics as needed  ← NOT VALID SQL
+  COMMENT = 'Description';
+
+-- ✅ CORRECT - Must have at least DIMENSIONS or METRICS
+CREATE SEMANTIC VIEW SV_NAME
+  TABLES (...)
+  RELATIONSHIPS (...)
+  DIMENSIONS (
+    table.dimension_name AS column_name
+  )
+  COMMENT = 'Description';
+```
+
+---
+
+### 8. **ALWAYS Check for Common Errors**
+
+#### GROUP BY Validation
+1. Count total columns in SELECT
+2. Count non-aggregated columns
+3. Verify GROUP BY references correct column positions
+4. Ensure GROUP BY doesn't reference columns that don't exist
+
+#### Schema References
+- Verify views are referenced from correct schema (RAW vs ANALYTICS)
+- Verify tables/views exist before referencing them
+
+#### Column Existence
+- For each `table.column` reference, verify column exists in that table
+- Check CREATE TABLE statements for exact column names
+- Watch for derived columns in views vs base tables
+
+#### Index Creation
+- **CRITICAL:** Regular Snowflake tables do NOT support CREATE INDEX
+- Indexes only work on Hybrid Tables
+- ❌ Wrong: `CREATE INDEX idx_name ON regular_table(column);`
+- ✅ Correct: Remove indexes, or use Hybrid Tables if needed
+
+---
+
+## ⛔ NEVER DO THESE THINGS
+
+### 1. **NEVER Create Validation Documentation Instead of Validating**
+
+This is a critical failure pattern:
+
+❌ **BAD Pattern:**
+```
+1. Write SQL code
+2. Create "VALIDATION.md" with checklists
+3. Mark everything as ✅ validated
+4. Claim "PRODUCTION READY"
+5. User finds errors when they run it
+```
+
+✅ **GOOD Pattern:**
+```
+1. Write SQL code
+2. ACTUALLY verify each statement against docs/tables
+3. Fix errors you find
+4. State what was verified and how
+5. Code runs without errors
+```
+
+**Red flags you're doing fake validation:**
+- Creating documents with titles like "COMPLETE_VALIDATION.md"
+- Marking things ✅ without evidence of checking
+- Claiming "100% confidence" or "PRODUCTION READY"
+- Spending more time on docs than actual verification
+
+**Real validation looks like:**
+- grep commands checking column names against table definitions
+- References to specific Snowflake documentation URLs
+- Actual evidence of checking (line numbers, grep output)
+- Honest statements like "verified columns X, Y, Z exist in table definition lines 45-52"
+
+### 2. **NEVER Guess at SQL Syntax**
+
+If you're not 100% certain:
+1. Say "I need to verify this syntax"
+2. Reference the Snowflake documentation
+3. Test with one example
+4. Then apply the pattern
+
+**Never** write code based on:
+- "It looks like it should work this way"
+- "Similar commands work like this"
+- "I think this is the syntax"
+- Pattern matching without verification
+
+### 3. **NEVER Assume ALTER Commands Work the Same**
+
+Each object type has different ALTER capabilities:
+- ALTER TABLE - extensive options
+- ALTER VIEW - limited options  
+- ALTER SEMANTIC VIEW - ONLY rename and comment
+- ALTER MATERIALIZED VIEW - different from VIEW
+
+**Always verify:** What can ALTER do for this specific object type?
+
+### 4. **NEVER Use Placeholder Comments in Production Code**
+
+```sql
+-- ❌ NEVER do this
+CREATE SEMANTIC VIEW SV_NAME
+  TABLES (...)
+  -- Add dimensions as needed  ← NOT VALID SQL
+  COMMENT = 'Description';
+
+-- ✅ Write complete, executable code
+CREATE SEMANTIC VIEW SV_NAME
+  TABLES (...)
+  DIMENSIONS (
+    table.dimension_name AS column_name
+  )
+  COMMENT = 'Description';
+```
+
+If you're writing example code, make it complete and correct.
+
+### 5. **NEVER Cast Before Arithmetic for Constrained Types**
+
+```sql
+-- ❌ WRONG - Cast to NUMBER(5,2) before division causes overflow
+(ABS(RANDOM()) % 10000)::NUMBER(5,2) / 100  -- Can't hold value 2519 in NUMBER(5,2)
+
+-- ✅ CORRECT - Do arithmetic first, let Snowflake cast to column type
+(ABS(RANDOM()) % 10000) / 100.0  -- Results in values 0.00-99.99
+```
+
+The explicit cast restricts the intermediate value before the division happens.
+
+---
+
+## 📋 SYSTEMATIC VALIDATION PROCESS
+
+Use this exact process for every file:
+
+### For INSERT Statements (Data Generation):
+
+1. **List all NOT NULL columns** from table definition
+2. **For each INSERT statement:**
+   - Identify how each NOT NULL column is populated
+   - If from LEFT JOIN: **STOP** - this can produce NULL
+   - Generate value directly instead
+3. **Check numeric expressions:**
+   - No explicit type casts before division
+   - Verify modulo ranges match intended output
+4. **Check column alias references:**
+   - No aliases referenced in same SELECT where defined
+
+### For CREATE SEMANTIC VIEW Statements:
+
+1. **Verify clause order:**
+   - TABLES → RELATIONSHIPS → FACTS → DIMENSIONS → METRICS → COMMENT
+2. **For each DIMENSION/METRIC:**
+   - Verify format: `semantic_name AS sql_expression` (not reversed!)
+   - Verify RIGHT side column exists in table definition (use grep)
+   - For reserved words, check if quoting needed
+3. **Verify relationships:**
+   - No self-references
+   - No cycles
+   - Foreign key columns exist in both tables
+4. **Verify at least one DIMENSION or METRIC exists**
+
+### For ALTER Statements:
+
+1. **Open Snowflake docs for that specific ALTER command**
+2. **Verify the operation is supported**
+3. **If not supported, use CREATE OR REPLACE instead**
+
+### For All SQL:
+
+1. **Column existence:** grep each column against table definitions
+2. **Reserved words:** Check for SQL keywords used as identifiers
+3. **GROUP BY:** Count non-aggregated columns match GROUP BY
+4. **Data types:** Verify operations match column types
+
+---
+
+## 🔧 SYSTEMATIC ERROR FIXING
+
+### When You Encounter an Error:
+
+1. **Read the exact error message**
+   - Note the line number
+   - Note the specific identifier or syntax mentioned
+   - Don't guess what it means
+
+2. **Find the root cause**
+   ```
+   Example: "invalid identifier 'FRAUD_ALERT_TYPE'"
+   
+   Wrong approach: "Let me add quotes"
+   Right approach: 
+   - Check what column the table actually has (grep)
+   - Check if syntax format is correct
+   - Discovered: semantic expression was backwards
+   ```
+
+3. **Fix ALL instances**
+   - Search for the same pattern throughout the file
+   - Don't just fix the one error line
+   - Verify the fix pattern is correct first
+
+4. **Provide evidence**
+   - Show the grep command that verified the fix
+   - Reference the documentation that supports the fix
+   - Don't just claim it's fixed
+
+### When Asked "Are you sure?" or "Did you validate?"
+
+This means you made an error. Do NOT:
+- Defend your work
+- Claim you validated when you didn't
+- Make excuses
+
+DO:
+- Re-verify everything in that section
+- Admit the error
+- Fix it systematically
+- Show evidence of the fix
+
+---
+
+## 💬 COMMUNICATION STANDARDS
+
+### What to Say:
+
+✅ "I have verified this against [specific Snowflake doc URL]"
+✅ "I used grep to verify column X exists in table Y at line Z"
+✅ "I found an error: [description]. Here's the fix: [fix]"
+✅ "I need to verify [X] before proceeding. Let me check the documentation."
+✅ "I cannot fully validate this without [X]. Would you like me to proceed with uncertainty or investigate further?"
+
+### What NOT to Say:
+
+❌ "This should work" (either it DOES work or you don't know)
+❌ "Appears correct" (either it IS correct or you haven't verified)
+❌ "Probably fine" (not acceptable)
+❌ "I think..." (verify instead of thinking)
+❌ "I validated everything" (unless you actually did, with evidence)
+❌ "✅ PRODUCTION READY" (unless it has been tested)
+
+---
+
+## 🎯 QUALITY STANDARDS
+
+### Before Claiming Code is Ready:
+
+1. **Syntax**: Verified against official Snowflake documentation with URL reference
+2. **Column References**: Every column verified with grep against table definitions
+3. **NOT NULL Constraints**: Every INSERT checked for NULL violation potential
+4. **Semantic Views**: Every expression verified to be in correct format
+5. **ALTER Commands**: Capabilities verified against documentation
+6. **Reserved Words**: Checked and quoted where necessary
+7. **Numeric Operations**: No premature type casting checked
+8. **GROUP BY**: Verified against non-aggregated columns
+
+### If You Cannot Meet These Standards:
+
+Say explicitly: "I cannot fully validate this without [X]. Would you like me to:
+- Proceed and mark areas of uncertainty?
+- Research [X] first?
+- Create the code with validation notes?"
+
+**Honesty is better than false confidence.**
+
+---
+
+## 📊 DOCUMENTATION STANDARDS
+
+### Do Not Create These Files:
+
+- ❌ Status/progress tracking documents
+- ❌ Error accountability documents
+- ❌ Verification checklists as separate files (validation should be IN the work, not a separate doc)
+- ❌ Fix summary documents
+- ❌ "COMPLETE_VALIDATION.md" files that claim validation without evidence
+
+### Only Create These Files:
+
+- ✅ README.md - Project overview and instructions
+- ✅ AGENT_SETUP.md - Configuration instructions (with complete, working examples)
+- ✅ Technical documentation explicitly requested by user
+- ✅ questions.md or similar if part of project deliverable
+
+---
+
+## 🚨 RED FLAGS (Stop and Verify)
+
+Stop and verify against documentation if:
+
+1. **You're about to use ALTER** - Check what ALTER can do for that object type
+2. **You see a SQL keyword as a column name** - Check if it's reserved, needs quoting
+3. **You're using a pattern from another command** - Verify the syntax is the same
+4. **You're creating validation docs** - Ask: Am I doing this instead of actual validation?
+5. **You're about to claim "validated"** - Ask: Do I have evidence of verification?
+6. **User questions your validation** - Stop defending, start re-verifying
+7. **Syntax looks unfamiliar** - Look it up, don't guess
+8. **Complex nested query** - Trace through the logic carefully
+9. **LEFT JOIN populating NOT NULL column** - This will fail, generate directly instead
+
+---
+
+## ✨ SUCCESS METRICS
+
+You are successful when:
+
+1. **Code runs on first execution without errors** (user doesn't debug your code)
+2. **All validation backed by evidence** (grep commands, doc URLs, line numbers)
+3. **Errors are found and fixed before user testing** (you catch them first)
+4. **Documentation is accurate** (examples work, syntax is correct)
+5. **User spends hours, not days** (rules help you avoid repeated errors)
+
+You have failed when:
+
+1. User finds errors by running the code
+2. User has to correct your SQL multiple times
+3. You claim validation you didn't do
+4. User asks "Are you sure?" or "Did you validate this?"
+5. Same error pattern repeats in multiple places
+
+---
+
+## 📈 CONTINUOUS IMPROVEMENT
+
+### After Each Project:
+
+1. **What syntax errors occurred?** - Add to this rules file
+2. **What validation was missed?** - Add to validation checklist
+3. **What documentation was wrong?** - Note the pattern to avoid
+4. **What user corrections were needed?** - Those should have been caught
+
+### Key Lessons from Early Warning Project (October 2025):
+
+1. **Semantic expression syntax was backwards** - Read docs word-for-word
+2. **ALTER SEMANTIC VIEW doesn't support ADD** - Verify ALTER capabilities
+3. **STATE is a reserved word in semantic views** - Check for reserved words
+4. **LEFT JOIN caused NULL in NOT NULL columns** - Check constraints vs data source
+5. **Created validation docs instead of validating** - Do work, don't document fake work
+6. **Claimed "100% validated" without evidence** - Only claim what you verified
+
+---
+
+## 🎓 LEARNING FROM MISTAKES
+
+### Common Failure Patterns:
+
+**Pattern 1: Backwards Syntax**
+- **Symptom:** "Invalid identifier" errors for columns you know exist
+- **Cause:** Syntax format is reversed
+- **Fix:** Check documentation for exact format
+
+**Pattern 2: Assumed ALTER Capabilities**
+- **Symptom:** "Syntax error" on ALTER command
+- **Cause:** Assumed ALTER works the same for all objects
+- **Fix:** Verify ALTER docs for specific object type
+
+**Pattern 3: Fake Validation**
+- **Symptom:** User finds errors after you claimed validation
+- **Cause:** Created validation documents instead of validating
+- **Fix:** Do actual verification with evidence
+
+**Pattern 4: Pattern Matching**
+- **Symptom:** Code looks right but fails
+- **Cause:** Copied pattern from similar but different command
+- **Fix:** Verify syntax for this specific command
+
+**Pattern 5: NULL in NOT NULL**
+- **Symptom:** "NULL in non-nullable column" error
+- **Cause:** LEFT JOIN can return NULL for missing matches
+- **Fix:** Generate values directly for NOT NULL columns
+
+---
+
+## 🏁 FINAL REMINDERS
+
+1. **NO GUESSING** - If uncertain, verify against documentation
+2. **READ DOCUMENTATION WORD-FOR-WORD** - Don't skim, don't pattern match
+3. **VERIFY ALTER CAPABILITIES** - Each object type is different
+4. **CHECK RESERVED WORDS** - Quote them when necessary
+5. **SEMANTIC EXPRESSIONS: semantic_name AS sql_expr** - Not reversed
+6. **NO LEFT JOIN FOR NOT NULL COLUMNS** - Generate directly
+7. **NO PREMATURE TYPE CASTING** - Do arithmetic first
+8. **ACTUAL VALIDATION > VALIDATION DOCUMENTS** - Do the work, don't just document it
+9. **HONESTY > FALSE CONFIDENCE** - Admit uncertainty, don't claim validation you didn't do
+10. **EVIDENCE-BASED CLAIMS** - Only claim what you verified with proof
+
+---
+
+**Remember:** 
+
+> "It's always better to say 'I need to verify this' than to claim validation you haven't done. Honesty and thoroughness build trust; false confidence destroys it."
+
+Rules help when they're followed. This session took hours instead of days because you applied the rules more consistently. Keep improving.
+
+---
+
+*Enhanced from lessons learned during:*
+- *Cathay Bank Intelligence Demo project (October 2, 2025)*
+- *Early Warning Intelligence Demo project (October 3, 2025)*
+
+*Key insight: Rules reduce debugging time from days to hours when consistently applied.*
+
+---
+alwaysApply: true
+---
