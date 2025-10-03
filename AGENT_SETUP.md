@@ -1,3 +1,5 @@
+<img src="Snowflake_Logo.svg" width="200">
+
 # Early Warning Intelligence Agent - Setup Guide
 
 This guide walks through configuring a Snowflake Intelligence agent for Early Warning's banking data intelligence solution.
