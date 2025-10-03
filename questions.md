@@ -1,3 +1,5 @@
+<img src="Snowflake_Logo.svg" width="200">
+
 # Early Warning Intelligence Agent - Complex Questions
 
 These 10 complex questions demonstrate the intelligence agent's ability to analyze Early Warning's network data, fraud patterns, payment flows, and risk metrics across multiple dimensions.
@@ -151,4 +153,167 @@ These questions test the agent's ability to:
 10. **Statistical filtering** - minimum thresholds, outlier detection, distribution analysis
 
 These questions reflect realistic business intelligence needs for Early Warning's fraud prevention and payment network operations.
+
+---
+
+## Cortex Search Questions (Unstructured Data)
+
+These questions test the agent's ability to search and retrieve insights from unstructured data using Cortex Search services.
+
+### 11. Similar Fraud Case Analysis
+
+**Question:** "Find similar account takeover cases from the last 6 months. What investigation procedures were used? What was the average amount involved and recovery rate?"
+
+**Why Complex:**
+- Semantic search over fraud investigation notes
+- Time-based filtering
+- Pattern extraction from unstructured text
+- Aggregation of amounts and outcomes
+
+**Data Source:** FRAUD_NOTES_SEARCH
+
+---
+
+### 12. Policy Guidance Retrieval
+
+**Question:** "What does our policy say about handling Zelle payment disputes? Include information about reversal policies and customer protection timelines."
+
+**Why Complex:**
+- Searches policy documents for specific topics
+- Extracts relevant policy details
+- Synthesizes information across multiple documents
+- Provides actionable guidance
+
+**Data Source:** POLICY_DOCUMENTS_SEARCH
+
+---
+
+### 13. Customer Support Case Examples
+
+**Question:** "Show me customer support cases involving elder fraud scams. What resolution strategies were most effective? What were the common warning signs?"
+
+**Why Complex:**
+- Semantic search for specific fraud type
+- Pattern recognition across transcripts
+- Effectiveness analysis from resolution status
+- Extraction of warning signs from narratives
+
+**Data Source:** SUPPORT_TRANSCRIPTS_SEARCH
+
+---
+
+### 14. Synthetic Identity Investigation Procedures
+
+**Question:** "How do we detect synthetic identity fraud according to our guidelines? What red flags should investigators look for during account opening reviews?"
+
+**Why Complex:**
+- Searches policy documents and FAQs
+- Extracts procedural information
+- Lists specific detection indicators
+- Provides investigator guidance
+
+**Data Source:** POLICY_DOCUMENTS_SEARCH
+
+---
+
+### 15. Fraud Ring Investigation Patterns
+
+**Question:** "Find investigation notes about fraud rings and organized crime. What tactics did these fraud rings use? How were they detected and what was the network exposure?"
+
+**Why Complex:**
+- Semantic search with multiple related terms
+- Pattern extraction from investigation notes
+- Financial impact aggregation
+- Detection method identification
+
+**Data Source:** FRAUD_NOTES_SEARCH
+
+---
+
+### 16. Phishing Attack Response Procedures
+
+**Question:** "Find cases where customers fell victim to phishing attacks. What were the common characteristics? How did customer support handle these cases? What prevention measures were recommended?"
+
+**Why Complex:**
+- Cross-searches fraud notes and support transcripts
+- Extracts characteristics from unstructured text
+- Identifies resolution patterns
+- Lists prevention recommendations
+
+**Data Sources:** FRAUD_NOTES_SEARCH, SUPPORT_TRANSCRIPTS_SEARCH
+
+---
+
+### 17. Chargeback Dispute Resolution Examples
+
+**Question:** "Show me customer support transcripts about Paze chargeback disputes. What evidence was required? What were the outcomes? How long did resolution take?"
+
+**Why Complex:**
+- Semantic search for dispute-related conversations
+- Extraction of requirements and evidence
+- Outcome pattern analysis
+- Timeline extraction from narratives
+
+**Data Source:** SUPPORT_TRANSCRIPTS_SEARCH
+
+---
+
+### 18. Risk Assessment Training Content
+
+**Question:** "What training materials do we have about Paze checkout fraud detection? What are the key risk scoring factors and authentication methods covered?"
+
+**Why Complex:**
+- Searches training documents
+- Extracts structured information from unstructured training content
+- Lists specific factors and methods
+- Provides educational context
+
+**Data Source:** POLICY_DOCUMENTS_SEARCH
+
+---
+
+### 19. Account Takeover Investigation Best Practices
+
+**Question:** "Find recent account takeover investigations and compare the investigation procedures used. What were the successful recovery tactics? What lessons were learned?"
+
+**Why Complex:**
+- Semantic search with comparison intent
+- Pattern extraction across multiple cases
+- Success factor identification
+- Lesson synthesis from narratives
+
+**Data Source:** FRAUD_NOTES_SEARCH
+
+---
+
+### 20. Cross-Source Fraud Intelligence
+
+**Question:** "For synthetic identity fraud cases, show me: 1) What our policies say about detection methods, 2) Investigation notes from confirmed cases, and 3) How customer support handled related inquiries. Combine insights from all sources."
+
+**Why Complex:**
+- Multi-source search (policies, notes, transcripts)
+- Information synthesis across structured and unstructured data
+- Context integration from multiple perspectives
+- Comprehensive intelligence gathering
+
+**Data Sources:** POLICY_DOCUMENTS_SEARCH, FRAUD_NOTES_SEARCH, SUPPORT_TRANSCRIPTS_SEARCH
+
+---
+
+## Cortex Search Complexity Summary
+
+These Cortex Search questions test the agent's ability to:
+
+1. **Semantic search** - Understanding intent beyond keywords
+2. **Unstructured data retrieval** - Finding relevant information in text
+3. **Pattern extraction** - Identifying patterns from narratives
+4. **Cross-source synthesis** - Combining insights from multiple knowledge bases
+5. **Context understanding** - Grasping nuanced questions about procedures and policies
+6. **Relevance ranking** - Prioritizing most relevant cases and examples
+7. **Information extraction** - Pulling specific details from long-form text
+8. **RAG (Retrieval Augmented Generation)** - Using retrieved context to answer questions
+9. **Temporal filtering** - Finding recent or time-specific cases
+10. **Multi-document synthesis** - Combining information across documents
+
+These questions complement the structured data analytics questions (1-10) by adding unstructured data intelligence capabilities.
 
